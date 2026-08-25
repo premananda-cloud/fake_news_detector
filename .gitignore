@@ -226,3 +226,6 @@ model/
 models/
 *.safetensors
 
+# logs
+logs/
+log/
