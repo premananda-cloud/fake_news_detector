@@ -10,7 +10,9 @@ tokenizer files and a results.json summary evaluated on the held-out test set.
 """
 
 import argparse
+import inspect
 import json
+import math
 
 import numpy as np
 import torch
@@ -22,6 +24,11 @@ from transformers import (
     TrainingArguments,
     set_seed,
 )
+
+# Some transformers versions use `eval_strategy`, older ones `evaluation_strategy`.
+# Detect which this install supports rather than hardcoding one.
+_TA_PARAMS = set(inspect.signature(TrainingArguments.__init__).parameters)
+_EVAL_STRATEGY_KEY = 'eval_strategy' if 'eval_strategy' in _TA_PARAMS else 'evaluation_strategy'
 
 from src.config import MODEL_CONFIGS, NUM_LABELS, TRAIN_CONFIG
 from src.training.dataset import get_tokenized_dataset
@@ -71,16 +78,21 @@ def main():
         model_name, num_labels=NUM_LABELS
     )
 
-    training_args = TrainingArguments(
+    # Compute warmup_steps manually — works regardless of whether this
+    # transformers version supports warmup_ratio directly.
+    steps_per_epoch = math.ceil(len(dataset['train']) / TRAIN_CONFIG['batch_size'])
+    total_steps = steps_per_epoch * TRAIN_CONFIG['epochs']
+    warmup_steps = int(total_steps * TRAIN_CONFIG['warmup_ratio'])
+
+    ta_kwargs = dict(
         output_dir=str(log_dir / 'checkpoints'),
-        eval_strategy=TRAIN_CONFIG['eval_strategy'],
         save_strategy=TRAIN_CONFIG['save_strategy'],
         learning_rate=TRAIN_CONFIG['learning_rate'],
         per_device_train_batch_size=TRAIN_CONFIG['batch_size'],
         per_device_eval_batch_size=TRAIN_CONFIG['eval_batch_size'],
         num_train_epochs=TRAIN_CONFIG['epochs'],
         weight_decay=TRAIN_CONFIG['weight_decay'],
-        warmup_ratio=TRAIN_CONFIG['warmup_ratio'],
+        warmup_steps=warmup_steps,
         max_grad_norm=TRAIN_CONFIG['max_grad_norm'],
         fp16=TRAIN_CONFIG['fp16'] and torch.cuda.is_available(),
         logging_dir=str(log_dir / 'tb_logs'),
@@ -91,6 +103,9 @@ def main():
         save_total_limit=2,
         report_to='none',
     )
+    ta_kwargs[_EVAL_STRATEGY_KEY] = TRAIN_CONFIG['eval_strategy']
+
+    training_args = TrainingArguments(**ta_kwargs)
 
     trainer = Trainer(
         model=model,
