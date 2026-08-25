@@ -84,6 +84,11 @@ def main():
     total_steps = steps_per_epoch * TRAIN_CONFIG['epochs']
     warmup_steps = int(total_steps * TRAIN_CONFIG['warmup_ratio'])
 
+    # NOTE: transformers v5.0 removed several TrainingArguments params
+    # without deprecation, including logging_dir, warmup_ratio, and
+    # overwrite_output_dir. We avoid all of those here. logging_steps still
+    # controls console/log frequency; with report_to='none' there's no
+    # separate TensorBoard dir needed anyway.
     ta_kwargs = dict(
         output_dir=str(log_dir / 'checkpoints'),
         save_strategy=TRAIN_CONFIG['save_strategy'],
@@ -95,7 +100,6 @@ def main():
         warmup_steps=warmup_steps,
         max_grad_norm=TRAIN_CONFIG['max_grad_norm'],
         fp16=TRAIN_CONFIG['fp16'] and torch.cuda.is_available(),
-        logging_dir=str(log_dir / 'tb_logs'),
         logging_steps=TRAIN_CONFIG['logging_steps'],
         load_best_model_at_end=True,
         metric_for_best_model='f1',
@@ -104,6 +108,10 @@ def main():
         report_to='none',
     )
     ta_kwargs[_EVAL_STRATEGY_KEY] = TRAIN_CONFIG['eval_strategy']
+
+    # Defensively drop any kwarg this install's TrainingArguments doesn't
+    # actually accept, rather than trading one-error-at-a-time round trips.
+    ta_kwargs = {k: v for k, v in ta_kwargs.items() if k in _TA_PARAMS}
 
     training_args = TrainingArguments(**ta_kwargs)
 
