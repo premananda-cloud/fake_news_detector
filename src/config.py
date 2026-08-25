@@ -69,3 +69,23 @@ for d in [MODELS_DIR, LOGS_DIR]:
 for cfg in MODEL_CONFIGS.values():
     cfg['save_dir'].mkdir(parents=True, exist_ok=True)
     cfg['log_dir'].mkdir(parents=True, exist_ok=True)
+
+# ============================================================================
+# EVALUATION OUTPUT PATHS
+# ============================================================================
+EVAL_OUTPUT_DIR = BASE_DIR / 'evaluate_outputs'
+EVAL_PATHS = {
+    name: {
+        'dir': EVAL_OUTPUT_DIR / name,
+        'metrics_json': EVAL_OUTPUT_DIR / name / 'metrics.json',
+        'classification_report': EVAL_OUTPUT_DIR / name / 'classification_report.txt',
+        'confusion_matrix_png': EVAL_OUTPUT_DIR / name / 'confusion_matrix.png',
+        'roc_curve_png': EVAL_OUTPUT_DIR / name / 'roc_curve.png',
+    }
+    for name in MODEL_CONFIGS
+}
+COMPARISON_DIR = EVAL_OUTPUT_DIR / 'comparison'
+
+for p in EVAL_PATHS.values():
+    p['dir'].mkdir(parents=True, exist_ok=True)
+COMPARISON_DIR.mkdir(parents=True, exist_ok=True)
