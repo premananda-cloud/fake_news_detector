@@ -1,64 +1,63 @@
-# BERT + SPST Fake News Detection
+# Fake News Detector
 
-> **97.52% accuracy · 97.71% F1 · 0.9981 AUC**  
-> Resource-efficient BERT fine-tuning via Sequential Parameter Segment Training (SPST)
+> BERT and RoBERTa fine-tuned for binary fake news classification — **98.15% accuracy · 98.28% F1 · 0.9988 AUC** (RoBERTa-base, best model)
 
-[![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/drive/1qdwF6kxTwKsSB89Nh0ymQhrRtcjVdPoI#scrollTo=aSB5Mr0fh0pR)
-
----
-
-## Overview
-
-This project fine-tunes `bert-base-uncased` for binary fake news classification (fake=0, real=1) using **SPST — Sequential Parameter Segment Training**: a progressive layer-unfreezing strategy that reduces peak GPU memory by only training one layer group at a time, then unlocking the next.
-
-Training on a free Colab T4 GPU went from a ~75% accuracy baseline (standard fine-tuning) to **97.52%** with SPST.
+Standard full fine-tuning of `bert-base-uncased` and `roberta-base` on a unified GossipCop + PolitiFact + LIAR corpus, trained locally on a single consumer GPU (RTX 4070, 12GB VRAM).
 
 ---
 
 ## Results
 
-| Metric    | Score   |
-|-----------|---------|
-| Accuracy  | 97.52%  |
-| Precision | 97.45%  |
-| Recall    | 97.98%  |
-| F1 Score  | 97.71%  |
-| AUC-ROC   | 0.9981  |
-| Test Loss | 0.0586  |
+| Model | Accuracy | Precision | Recall | F1 | AUC-ROC |
+|---|---|---|---|---|---|
+| BERT-base-uncased | 97.99% | 97.94% | 98.35% | 98.15% | 0.9984 |
+| **RoBERTa-base** | **98.15%** | **98.51%** | 98.06% | **98.28%** | **0.9988** |
 
-Full training history, plots (loss curves, F1 curves, confusion matrix, ROC curve), model weights, and `results.json` are available on Google Drive:  
-📁 [Results & Model Weights](https://drive.google.com/drive/folders/1zAD6Q5RxQ-YGfiV455_DpG3_Wd2sgLkW?usp=sharing)
+RoBERTa outperforms BERT on every metric except recall, where BERT is marginally ahead. Full evaluation artifacts (confusion matrices, ROC curves, classification reports) are in [`evaluate_outputs/`](evaluate_outputs/).
+
+![Model comparison](evaluate_outputs/comparison/metrics_comparison.png)
+
+Test set: 4,482 held-out examples, stratified from the same distribution as training.
 
 ---
 
-## Method: SPST (Progressive Unfreezing)
+## Method
 
-The BERT model is divided into 4 layer groups, trained sequentially:
+This project uses **standard full fine-tuning** — all encoder layers trainable from step one — rather than progressive/layer-frozen training schemes. On a 12GB consumer GPU at `max_length=128`, both `bert-base-uncased` and `roberta-base` fit comfortably at batch size 32 with mixed precision, so no gradient checkpointing, layer-freezing, or gradual unfreezing was necessary.
 
-| Segment           | Layers Trained              | Epochs | Learning Rate |
-|-------------------|-----------------------------|--------|---------------|
-| `classifier_only` | Classifier + Pooler         | 2      | 3e-4          |
-| `top_layers`      | + Encoder layers 10–11      | 2      | 1e-4          |
-| `mid_layers`      | + Encoder layers 7–9        | 2      | 5e-5          |
-| `full_model`      | All layers                  | 2      | 2e-5          |
+**Hyperparameters** (`src/config.py`):
 
-Additional optimisations: FP16 mixed precision, gradient checkpointing, gradient accumulation (effective batch size 64).
+| Setting | Value |
+|---|---|
+| Max sequence length | 128 |
+| Batch size | 32 |
+| Epochs | 4 (early stopping patience 2, monitored on val F1) |
+| Learning rate | 2e-5 |
+| Weight decay | 0.01 |
+| Warmup ratio | 0.1 |
+| Mixed precision | FP16 |
+
+> **Note:** an earlier iteration of this project explored *Sequential Parameter Switch Training (SPST)* — a progressive layer-unfreezing scheme for training BERT within severe memory constraints (e.g. free-tier Colab GPUs). That approach is documented separately; this repository's current training path is the simpler standard fine-tuning approach above, since local GPU memory is not a binding constraint here.
 
 ---
 
 ## Dataset
 
-Three sources unified into a single corpus:
+Unified corpus combining three sources into a single binary-labeled (`fake`=0, `real`=1) format:
 
-| Dataset     | Fake | Real | Text Source                        |
-|-------------|------|------|------------------------------------|
-| GossipCop   | 3000 | 3000 | Scraped article / title fallback   |
-| PolitiFact  | 500  | 500  | Scraped article / title fallback   |
-| LIAR        | ~6300| ~6300| Concatenated title + statement     |
+| Source | Content |
+|---|---|
+| GossipCop | Entertainment news (scraped article text) |
+| PolitiFact | Political fact-checks (scraped article text) |
+| LIAR | Short political statements (six-way labels collapsed to binary) |
 
-Split: **80% train / 10% validation / 10% test** (stratified).
+| Split | Examples | Fake | Real |
+|---|---|---|---|
+| Train | 35,850 | 16,478 | 19,372 |
+| Val | 4,481 | 2,060 | 2,421 |
+| Test | 4,482 | 2,060 | 2,422 |
 
-📦 [Download Dataset ZIP](https://drive.google.com/file/d/1BfIvNcVJQIx8-KAqWFavy-htKcjTbMTb/view?usp=sharing)
+Dataset details and provenance: see the companion dataset repository README.
 
 ---
 
@@ -66,26 +65,35 @@ Split: **80% train / 10% validation / 10% test** (stratified).
 
 ```
 ├── datasets/
-│   ├── raw/                        # Original source TSVs
-│   │   ├── gossipcop_fake.tsv
-│   │   ├── gossipcop_real.tsv
-│   │   ├── politifact_fake.tsv
-│   │   ├── politifact_real.tsv
-│   │   ├── liar_fake/Fake.tsv
-│   │   └── liar_real/True.tsv
-│   └── processed/                  # Cleaned, unified splits
-│       ├── unified_train.tsv
-│       ├── unified_val.tsv
-│       └── unified_test.tsv
-├── scrape_gossipcop_fake.py        # Per-source scrapers
-├── scrape_gossipcop_real.py
-├── scrape_politifact_fake.py
-├── scrape_politifact_real.py
-├── unify_dataset.py                # Clean + unify + split
-├── train/
-│   └── train_bert.py               # Training script (local)
-├── train_bert_colab.ipynb          # Colab notebook (recommended)
-├── config.py
+│   ├── datasets/
+│   │   ├── raw/                       # Original per-source TSVs
+│   │   └── processed/                 # unified_{train,val,test}.tsv
+│   └── datasets.zip
+├── models/
+│   ├── bert/                          # Fine-tuned BERT weights + tokenizer + results.json
+│   └── roberta/                       # Fine-tuned RoBERTa weights + tokenizer + results.json
+├── logs/
+│   ├── bert/checkpoints/              # Trainer checkpoints
+│   └── roberta/checkpoints/
+├── evaluate_outputs/
+│   ├── bert/                          # metrics.json, confusion_matrix.png, roc_curve.png, classification_report.txt
+│   ├── roberta/
+│   └── comparison/                    # metrics_comparison.csv / .png
+├── gradio_ui/                         # Inference demo app
+│   ├── app.py
+│   ├── components.py
+│   ├── explain.py
+│   ├── extract.py
+│   └── inference.py
+├── src/
+│   ├── config.py                      # Paths, model configs, hyperparameters
+│   ├── training/
+│   │   ├── dataset.py                 # Loads + tokenizes unified TSVs
+│   │   └── train.py                   # Standard fine-tuning entry point
+│   └── evaluate/
+│       ├── evaluate.py                # Per-model test-set evaluation + plots
+│       └── compare.py                 # Cross-model comparison chart/table
+├── train_bert_colab.ipynb             # Colab notebook (legacy / optional)
 └── requirements.txt
 ```
 
@@ -93,38 +101,42 @@ Split: **80% train / 10% validation / 10% test** (stratified).
 
 ## Reproduce
 
-### 1. Clone & install
+### 1. Setup
 
 ```bash
-git clone https://github.com/premananda-cloud/Bert_training_via_SPST
-cd Bert_training_via_SPST
+git clone https://github.com/premananda-cloud/fake_news_detector
+cd fake_news_detector
 pip install -r requirements.txt
 ```
 
-### 2. Get the dataset
+### 2. Dataset
 
-Download the [dataset ZIP](https://drive.google.com/file/d/1BfIvNcVJQIx8-KAqWFavy-htKcjTbMTb/view?usp=sharing) and unzip it into the project root so `datasets/processed/unified_train.tsv` exists.  
+Unzip `datasets/datasets.zip` so that `datasets/datasets/processed/unified_train.tsv` (and val/test) exist. See the dataset repository for the standalone corpus if starting fresh.
 
-Or re-scrape from scratch:
+### 3. Train
 
 ```bash
-# Run each scraper independently (they're slow — run in parallel terminals)
-python scrape_gossipcop_fake.py
-python scrape_gossipcop_real.py
-python scrape_politifact_fake.py
-python scrape_politifact_real.py
-
-# Then clean, unify, and split
-python unify_dataset.py
+python -m src.training.train --model bert
+python -m src.training.train --model roberta
 ```
 
-### 3. Train on Colab
+Each run saves the best checkpoint (by validation F1) to `models/<name>/`, along with a `results.json` test-set summary.
 
-[![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/drive/1qdwF6kxTwKsSB89Nh0ymQhrRtcjVdPoI#scrollTo=aSB5Mr0fh0pR)
+### 4. Evaluate
 
-1. Open the notebook in Colab
-2. Set runtime to **GPU (T4)**: Runtime → Change runtime type
-3. Run all cells — the notebook mounts Drive, downloads the dataset, trains, saves weights + plots to `My Drive/spst/`, and downloads a results ZIP
+```bash
+python -m src.evaluate.evaluate --model bert
+python -m src.evaluate.evaluate --model roberta
+python -m src.evaluate.compare
+```
+
+Produces per-model confusion matrices, ROC curves, classification reports, and a side-by-side comparison chart in `evaluate_outputs/`.
+
+### 5. Try it out
+
+```bash
+python gradio_ui/app.py
+```
 
 ---
 
@@ -132,23 +144,26 @@ python unify_dataset.py
 
 ```
 torch
-transformers==4.40.0
+transformers>=4.40.0
+datasets
 scikit-learn
 pandas
 numpy
-newspaper3k
-lxml_html_clean
+accelerate>=1.1.0
 matplotlib
 seaborn
-tqdm
 ```
+
+> Tested against `transformers==5.15.1`. If using an older `transformers` (4.x) install, note that some `TrainingArguments` field names differ (e.g. `warmup_ratio` was removed in v5.0 in favor of computing `warmup_steps` directly) — `src/training/train.py` detects and adapts to either.
 
 ---
 
-## Links
+## Hardware
 
-| Resource | Link |
-|----------|------|
-| Colab Notebook | https://colab.research.google.com/drive/1iKxeyO9S4c6nVdNyFzsxoybEWTLk2MB2?usp=drive_link |
-| Dataset ZIP | https://drive.google.com/file/d/1BfIvNcVJQIx8-KAqWFavy-htKcjTbMTb/view?usp=sharing |
-| Model Weights & Results | https://drive.google.com/drive/folders/1zAD6Q5RxQ-YGfiV455_DpG3_Wd2sgLkW?usp=sharing |
+Trained and evaluated on a single NVIDIA RTX 4070 (12GB VRAM), CUDA 13.2. Full fine-tuning of either base model at batch size 32 / `max_length=128` / FP16 comfortably fits within this budget.
+
+---
+
+## License
+
+MIT
