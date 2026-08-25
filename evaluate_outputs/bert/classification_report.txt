@@ -1,0 +1,10 @@
+Model: bert-base-uncased
+
+              precision    recall  f1-score   support
+
+        fake     0.9805    0.9757    0.9781      2060
+        real     0.9794    0.9835    0.9815      2422
+
+    accuracy                         0.9799      4482
+   macro avg     0.9800    0.9796    0.9798      4482
+weighted avg     0.9799    0.9799    0.9799      4482

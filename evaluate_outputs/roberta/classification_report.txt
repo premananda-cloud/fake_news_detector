@@ -1,0 +1,10 @@
+Model: roberta-base
+
+              precision    recall  f1-score   support
+
+        fake     0.9773    0.9825    0.9799      2060
+        real     0.9851    0.9806    0.9828      2422
+
+    accuracy                         0.9815      4482
+   macro avg     0.9812    0.9816    0.9814      4482
+weighted avg     0.9815    0.9815    0.9815      4482
